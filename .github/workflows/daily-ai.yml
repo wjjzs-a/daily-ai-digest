@@ -1,0 +1,50 @@
+name: daily-ai
+
+on:
+  schedule:
+    # GitHub 的 cron 用 UTC。01:00 UTC = 09:00 北京时间
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}   # 手动测试用，Actions 页面点一下就跑
+
+# 同一时间只跑一个，避免重复推送
+concurrency:
+  group: daily-ai
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Build & push digest
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 两种模式二选一，看你填了哪组 secret
+          LLM_MODE: ${{ vars.LLM_MODE }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          WKBD_CRED: ${{ secrets.WKBD_CRED }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_MAX_TOKENS: "16000"
+        run: python daily_ai.py
+
+      # 失败时也把结构化日志留成 artifact，方便排查
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-ai-log
+          path: "*.log"
+          if-no-files-found: ignore
+          retention-days: 7

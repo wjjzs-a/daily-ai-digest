@@ -1,0 +1,5 @@
+# 凭证与运行产物，绝不入库
+private/
+*.log
+__pycache__/
+*.pyc
