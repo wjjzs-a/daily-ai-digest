@@ -568,7 +568,7 @@ def md_for_telegram(text):
 
 def pick_channel():
     """按优先级挑推送通道。Server酱发微信，Telegram 兜底。"""
-    if (os.environ.get("SCT_SENDKEY") or "").strip():
+    if (os.environ.get("SCT_SENDKEY") or "").strip().lstrip("\ufeff").strip():
         return "serverchan"
     if (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip() and \
        (os.environ.get("TELEGRAM_CHAT_ID") or "").strip():
@@ -598,7 +598,7 @@ def sc_send(title, desp, dry=False):
 
     key 以 sctp 开头的是 Server酱³，走另一套域名。这边两种都支持。
     """
-    key = (os.environ.get("SCT_SENDKEY") or "").strip()
+    key = (os.environ.get("SCT_SENDKEY") or "").strip().lstrip("\ufeff").strip()
     if not key:
         log("Server酱 未配置")
         return False
