@@ -98,12 +98,22 @@ python _selftest.py      # Markdown 转换 + 字节切分自检
 新建一个仓库，**建议设为 Public**（公开仓库的 Actions 完全免费，私有仓库扣额度），
 把 `daily_ai.py`、`requirements.txt`、`.github/workflows/daily-ai.yml` 三个文件推上去。
 
-### 2. 拿 Telegram 的两个值
+### 2. 拿推送凭证
 
-1. Telegram 里搜 **@BotFather** → `/newbot` → 按提示起名 → 拿到 **token**（形如 `123456:ABC-DEF...`）
+**方案 A：Server酱（微信，推荐）**
+
+1. 手机浏览器打开 https://sct.ftqq.com/，微信扫码登录
+2. 进入「SendKey」页面，复制 `SCT` 开头那串
+3. 关注它提示的服务号（不关注收不到消息）
+
+**方案 B：Telegram**
+
+1. 搜 **@BotFather** → `/newbot` → 起名 → 拿到 **token**（形如 `123456:ABC-DEF...`）
 2. **给这个 bot 发一条消息**（必须主动发，bot 不能先开口）
 3. 浏览器打开 `https://api.telegram.org/bot<你的token>/getUpdates`，
    找 `"chat":{"id":123456789,...}`，那个数字就是 **chat_id**
+
+两个都配的话 **Server酱优先**，Telegram 不生效。
 
 ### 3. 填 Secrets
 
@@ -113,8 +123,9 @@ python _selftest.py      # Markdown 转换 + 字节切分自检
 
 | 名字 | 值 |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | 上一步的 token |
-| `TELEGRAM_CHAT_ID` | 上一步的 chat_id |
+| `SCT_SENDKEY` | Server酱 的 SendKey（走微信时填这个） |
+| `TELEGRAM_BOT_TOKEN` | （走 Telegram 时）上一步的 token |
+| `TELEGRAM_CHAT_ID` | （走 Telegram 时）上一步的 chat_id |
 | `WKBD_CRED` | （用 wkbd 模式时）整段 `{"account":{...},"auth":{...}}` JSON |
 | `LLM_BASE_URL` | （用 openai 模式时）端点根地址 |
 | `LLM_API_KEY` | （用 openai 模式时）对应 key |
