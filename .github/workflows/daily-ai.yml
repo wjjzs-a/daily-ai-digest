@@ -28,6 +28,8 @@ jobs:
 
       - name: Build & push digest
         env:
+          # 推送通道：配了 SCT_SENDKEY 就走微信，否则走 Telegram
+          SCT_SENDKEY: ${{ secrets.SCT_SENDKEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # 两种模式二选一，看你填了哪组 secret
