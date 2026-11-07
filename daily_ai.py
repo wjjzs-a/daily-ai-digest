@@ -327,7 +327,7 @@ def _wkbd_load_cred():
     WKBD_CRED        整段 JSON（{"account":{...},"auth":{...}} 或扁平 {"accessToken":...}）
     WKBD_ACCESS_TOKEN / WKBD_REFRESH_TOKEN   分开两个变量
     """
-    raw = (os.environ.get("WKBD_CRED") or "").strip()
+    raw = (os.environ.get("WKBD_CRED") or "").strip().lstrip("\ufeff")
     if raw:
         try:
             j = json.loads(raw)
