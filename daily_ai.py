@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-daily_ai.py — 每日 AI 热点 + GitHub 热门，推到 Telegram。
+daily_ai.py — 每日 AI 热点 + GitHub 热门，推到微信 / Telegram。
 
 设计原则：
   1. 只用标准库（feedparser 可选，装了就用，没装退回 xml.etree）
   2. 模型端点是 OpenAI 兼容，URL / KEY / MODEL 全走环境变量，不写死
   3. 模型调用失败 → 降级为「纯列表」照常推送，宁可糙不能断
-  4. Telegram 单条硬上限 4096 UTF-8 字节，按字节切分，不切断多字节字符
+  4. 推送通道自动选择：配了 Server酱就发微信，否则发 Telegram，都没有就只打印
 
-环境变量：
-  TELEGRAM_BOT_TOKEN   必填
-  TELEGRAM_CHAT_ID     必填
+推送通道（按优先级自动选，配哪个用哪个）：
+  SCT_SENDKEY          Server酱 SendKey（SCT 开头）→ 微信服务号
+  TELEGRAM_BOT_TOKEN   和 TELEGRAM_CHAT_ID 一起配 → Telegram
+
+模型：
   LLM_BASE_URL         OpenAI 兼容根，如 https://xxx/v1（留空则跳过摘要）
   LLM_API_KEY          对应 key
-  LLM_MODEL            模型名，如 cn:deepseek-v4.1-flash
+  LLM_MODE             openai / wkbd
+  WKBD_CRED            wkbd 模式的凭证 JSON
+  LLM_MODEL            模型名，逗号分隔，前一个失败换下一个
+
+其它：
   DRY_RUN=1            只打印不发送
 """
 
@@ -516,7 +522,7 @@ def _llm_once(base, key, model, prompt):
 # ---------------------------------------------------------------- 降级输出
 
 def fallback_text(news, trending, reason):
-    lines = ["⚠️ *今日简报降级版*", f"_摘要生成失败：{reason}_", ""]
+    lines = ["⚠️ **今日简报降级版**", f"*摘要生成失败：{reason}*", ""]
     lines.append("## AI 新闻")
     for n in news[:10]:
         lines.append(f"• [{n['source']}] {n['title']}")
@@ -556,6 +562,83 @@ def md_for_telegram(text):
     txt = "\n".join(out)
     txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
     return txt
+
+
+# ---------------------------------------------------------------- 通道选择
+
+def pick_channel():
+    """按优先级挑推送通道。Server酱发微信，Telegram 兜底。"""
+    if (os.environ.get("SCT_SENDKEY") or "").strip():
+        return "serverchan"
+    if (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip() and \
+       (os.environ.get("TELEGRAM_CHAT_ID") or "").strip():
+        return "telegram"
+    return None
+
+
+def md_for_wechat(text):
+    """Server酱正文走 Markdown，模型输出基本能直接用。
+
+    只把行首列表符统一，避免服务号渲染出奇怪的缩进。
+    """
+    out = []
+    for line in text.split("\n"):
+        s = line.rstrip()
+        s = re.sub(r"^\s*[-*+]\s+", "- ", s)
+        out.append(s)
+    txt = "\n".join(out)
+    txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
+    return txt
+
+
+# ---------------------------------------------------------------- Server酱
+
+def sc_send(title, desp, dry=False):
+    """Server酱 Turbo：POST https://sctapi.ftqq.com/<SendKey>.send
+
+    key 以 sctp 开头的是 Server酱³，走另一套域名。这边两种都支持。
+    """
+    key = (os.environ.get("SCT_SENDKEY") or "").strip()
+    if not key:
+        log("Server酱 未配置")
+        return False
+
+    if key.startswith("sctp"):
+        url = f"https://{key}.push.ft07.com/send"
+    else:
+        url = f"https://sctapi.ftqq.com/{key}.send"
+
+    if dry:
+        print(f"\n===== Server酱 预览 =====\n[{title}]\n{desp}")
+        return True
+
+    body = json.dumps({
+        "title": title,
+        "desp": desp,
+        "noip": 1,
+    }, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json;charset=utf-8"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            j = json.loads(r.read().decode("utf-8", "replace"))
+        code = j.get("code")
+        if code == 0:
+            log(f"Server酱 推送成功 pushid={j.get('data', {}).get('pushid', '?')}")
+            return True
+        log(f"Server酱 失败 code={code} message={j.get('message')}")
+        return False
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300]
+        log(f"Server酱 HTTP {e.code}: {detail}")
+        return False
+    except Exception as e:
+        log(f"Server酱 调用失败: {e}")
+        return False
 
 
 # ---------------------------------------------------------------- Telegram
@@ -670,13 +753,21 @@ def main():
     else:
         fail_reason = "素材不足"
 
-    if body:
-        header = f"*{now:%m月%d日} AI 简报*\n\n"
-        text = header + md_for_telegram(body)
-    else:
-        text = md_for_telegram(fallback_text(news, trending, fail_reason or "未知"))
+    if not body:
+        body = fallback_text(news, trending, fail_reason or "未知")
 
-    ok = tg_send(text, dry=dry)
+    title = f"{now:%m月%d日} AI 简报"
+    channel = pick_channel()
+
+    if channel == "serverchan":
+        ok = sc_send(title, md_for_wechat(body), dry=dry)
+    elif channel == "telegram":
+        ok = tg_send(f"*{title}*\n\n" + md_for_telegram(body), dry=dry)
+    else:
+        log("没有任何推送通道配置，只打印")
+        print(f"\n===== {title} =====\n{body}")
+        return 3
+
     log("推送完成" if ok else "推送失败")
     return 0 if ok else 2
 
