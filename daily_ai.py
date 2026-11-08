@@ -66,6 +66,34 @@ MAX_ITEMS_PER_FEED = 4
 
 # 推理型模型（deepseek-v4.1 / glm 等）会先花大量 token 思考，预算给小了
 # 会出现 finish_reason=length 且 content 为空。给足预算。
+# ---------------------------------------------------------------- 本地配置
+
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "private", "local_config.json")
+CRED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "private", "wkbd_cred.json")
+
+
+def load_local_config():
+    """本地运行时从 private/local_config.json 读配置（该目录不入库）。
+
+    GitHub Actions 上没这个文件，直接跳过，完全靠环境变量。
+    已存在的环境变量优先，不被文件覆盖。
+    """
+    if not os.path.exists(CONFIG_PATH):
+        return
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+    except Exception as e:
+        log(f"local_config.json 读取失败: {e}")
+        return
+    applied = 0
+    for k, v in cfg.items():
+        if isinstance(v, str) and v.strip() and not os.environ.get(k):
+            os.environ[k] = v.strip()
+            applied += 1
+    log(f"已从本地配置加载 {applied} 项")
+
+
 MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS") or "16000")
 
 
@@ -323,11 +351,22 @@ def _wkbd_headers(token, extra=None):
 
 
 def _wkbd_load_cred():
-    """从环境变量读凭证。支持两种写法：
-    WKBD_CRED        整段 JSON（{"account":{...},"auth":{...}} 或扁平 {"accessToken":...}）
-    WKBD_ACCESS_TOKEN / WKBD_REFRESH_TOKEN   分开两个变量
+    """读凭证。优先级：
+    1. 环境变量 WKBD_CRED（整段 JSON）
+    2. 环境变量 WKBD_ACCESS_TOKEN / WKBD_REFRESH_TOKEN
+    3. 本地文件 private/wkbd_cred.json（本地跑时用，不入库）
     """
     raw = (os.environ.get("WKBD_CRED") or "").strip().lstrip("\ufeff")
+
+    if not raw and not os.environ.get("WKBD_REFRESH_TOKEN"):
+        if os.path.exists(CRED_PATH):
+            try:
+                with open(CRED_PATH, "r", encoding="utf-8-sig") as f:
+                    raw = f.read().strip()
+                log("凭证从 private/wkbd_cred.json 读取")
+            except Exception as e:
+                log(f"读 {CRED_PATH} 失败: {e}")
+
     if raw:
         try:
             j = json.loads(raw)
@@ -732,6 +771,7 @@ def tg_send(text, dry=False):
 # ---------------------------------------------------------------- main
 
 def main():
+    load_local_config()
     dry = os.environ.get("DRY_RUN") == "1"
     now = datetime.now(CST)
     log(f"开始 {now:%Y-%m-%d %H:%M} CST  dry={dry}")
